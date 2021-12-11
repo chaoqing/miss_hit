@@ -3349,3 +3349,169 @@ def dotpr(filename, root_node):
         fd.write("digraph G {\n")
         dot(fd, None, "", root_node)
         fd.write("}\n")
+
+
+###################################################################
+# Matlab To Python/Numpy output: Python
+###################################################################
+from functools import partial
+
+class AST_Visitor_CallBacks(object):
+    def __init__(self):
+        self.callbacks = {}
+
+    def register(self, node: Node, *args):
+        self.callbacks.setdefault(node.uid, []).extend(args)
+
+    def pop(self, node):
+        return self.callbacks.pop(node.uid, [])[::-1]
+
+class Python_Visitor(AST_Visitor):
+    def __init__(self, fd):
+        super().__init__()
+        self.indent = 0
+        self.fd = fd
+        self.buffer = []
+        self.callbacks = AST_Visitor_CallBacks()
+
+    def new_buffer(self):
+        self.buffer.append('')
+
+    def pop_buffer(self):
+        return self.buffer.pop()
+
+    def func_start(self):
+        self.indent += 1
+        self.write('):')
+        self.write_newline()
+
+    def func_return(self, node):
+        self.callbacks.register(node, partial(self.write, f'return {self.pop_buffer()}'))
+
+    def func_stop(self):
+        self.indent -= 1
+        self.write_newline()
+
+    def write(self, string):
+        assert isinstance(string, str)
+        if self.buffer:
+            self.buffer[-1] = self.buffer[-1] + string
+        else:
+            if self.fd:
+                self.fd.write(string)
+            else:
+                print(string, end='')
+
+    def write_newline(self):
+        self.write("\n" + " " * (self.indent * 2))
+
+    def close_indent(self):
+        self.indent -= 1
+
+    def visit(self, *args):
+        try:
+            return self.visit_node(*args)
+        except NotImplementedError:
+            pass
+
+    def visit_node(self, node, n_parent, relation):
+        if isinstance(node, Special_Block):
+            raise NotImplementedError
+            self.write_head(node.t_kw.value.capitalize() + " " +
+                            node.__class__.__name__,
+                            relation)
+        elif isinstance(node, Entity_Constraints):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__,
+                            relation)
+            for dim, t_cons in enumerate(node.l_dim_constraint, 1):
+                if t_cons.kind == "COLON":
+                    self.write("Dimension %u constraint: %s" %
+                               (dim, t_cons.kind))
+                else:
+                    self.write("Dimension %u constraint: %s" %
+                               (dim, t_cons.value))
+        elif isinstance(node, Script_File):
+            self.callbacks.register(node.n_statements, self.write_newline)
+
+            for i in node.l_functions:
+                self.callbacks.register(i, self.write_newline)
+
+        elif isinstance(node, Sequence_Of_Statements):
+            for i in node.l_statements:
+                self.callbacks.register(i, self.write_newline)
+
+        elif isinstance(node, Function_Definition):
+            self.write("def ")
+            self.callbacks.register(node.n_sig, self.func_start)
+            self.callbacks.register(node.n_body, self.func_stop)
+
+        elif isinstance(node, Function_Signature):
+            self.callbacks.register(node.n_name, partial(self.write, '('))
+            for i in node.l_inputs[:-1]:
+                self.callbacks.register(i, partial(self.write, ', '))
+            self.callbacks.register(node.l_inputs[-1], self.new_buffer)
+            for i in node.l_outputs[:-1]:
+                self.callbacks.register(i, partial(self.write, ', '))
+            if node.l_outputs:
+                self.callbacks.register(node.l_outputs[-1], partial(self.func_return, node.n_parent.n_body))
+
+        elif isinstance(node, Simple_Assignment_Statement):
+            self.callbacks.register(node.n_lhs, partial(self.write, ' = '))
+
+
+        elif isinstance(node, Function_Call):
+            raise NotImplementedError
+            self.write_head(node.variant.capitalize() + " form " +
+                            node.__class__.__name__,
+                            relation)
+        elif isinstance(node, Action):
+            raise NotImplementedError
+            self.write_head(node.kind().capitalize() + " " +
+                            node.__class__.__name__,
+                            relation)
+        elif isinstance(node, Identifier):
+            self.write(node.t_ident.value)
+        elif isinstance(node, Number_Literal):
+            self.write(node.t_value.value)
+        elif isinstance(node, Char_Array_Literal):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ +
+                            " '" + node.t_string.value + "'",
+                            relation)
+        elif isinstance(node, String_Literal):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ +
+                            " \"" + node.t_string.value + "\"",
+                            relation)
+        elif isinstance(node, Unary_Operation):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ + " " + node.t_op.value,
+                            relation)
+        elif isinstance(node, Binary_Operation):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ + " " + node.t_op.value,
+                            relation)
+            if isinstance(node, Binary_Logical_Operation):
+                self.write("Short-Circuit: %s" % node.short_circuit)
+        elif isinstance(node, Import_Statement):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ +
+                            " for " +
+                            ".".join(node.get_chain_strings()),
+                            relation)
+        elif isinstance(node, Metric_Justification_Pragma):
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__ +
+                            " for %s" % node.t_metric.value,
+                            relation)
+        elif isinstance(node, Naked_Expression_Statement):
+            pass
+        else:
+            raise NotImplementedError
+            self.write_head(node.__class__.__name__,
+                            relation)
+
+    def visit_end(self, node, n_parent, relation):
+        for f in self.callbacks.pop(node):
+            f()
