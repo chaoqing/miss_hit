@@ -3362,6 +3362,7 @@ class Python_Visitor(AST_Visitor):
         super().__init__()
         self.fd = fd
         self.node_src = OrderedDict()
+        self.node_visitor = {}
 
     def __setitem__(self, node, src):
         self.node_src[node.uid] = src
@@ -3369,107 +3370,109 @@ class Python_Visitor(AST_Visitor):
     def pop(self, node):
         return self.node_src.pop(node.uid)
 
-    def indent(self, src: str):
+    @staticmethod
+    def indent(src: str):
         return '\n'.join([f'  {l}' for l in src.split('\n')])
 
     def visit(self, node, n_parent, relation):
-        if isinstance(node, Identifier):
-            self[node] = node.t_ident.value
-        elif isinstance(node, Number_Literal):
-            self[node] = node.t_value.value
-        elif isinstance(node, (Char_Array_Literal, String_Literal)):
-            self[node] = f'"{node.t_string.value}"'
-        else:
-            pass
+        pass
 
     def visit_end(self, node, n_parent, relation):
+        visitor = self.node_visitor.get(node.__class__, None)
         try:
-            return self.visit_end_(node, n_parent, relation)
+            if visitor is None:
+                visitor = getattr(self, f'{node.__class__.__name__.lower()}_visitor')
+                self.node_visitor[node.__class__] = visitor
+
+            visitor(node, n_parent, relation)
+
+        except AttributeError:
+            self[node] = ''
         except NotImplementedError:
             self[node] = ''
 
-    def visit_end_(self, node, n_parent, relation):
-        if isinstance(node, Special_Block):
-            raise NotImplementedError
-            self.write_head(node.t_kw.value.capitalize() + " " +
-                            node.__class__.__name__,
-                            relation)
-        elif isinstance(node, Entity_Constraints):
-            raise NotImplementedError
-            self.write_head(node.__class__.__name__,
-                            relation)
-            for dim, t_cons in enumerate(node.l_dim_constraint, 1):
-                if t_cons.kind == "COLON":
-                    self.write("Dimension %u constraint: %s" %
-                               (dim, t_cons.kind))
-                else:
-                    self.write("Dimension %u constraint: %s" %
-                               (dim, t_cons.value))
-
-        elif isinstance(node, Script_File):
-            self[node] = '\n'.join([self.pop(l) for l in [*node.l_functions, node.n_statements]])
-
-        elif isinstance(node, Sequence_Of_Statements):
-            self[node] = '\n'.join([self.pop(l) for l in node.l_statements])
-
-        elif isinstance(node, Function_Definition):
-            n_name = self.pop(node.n_sig.n_name)
-            n_body = self.indent(self.pop(node.n_body))
-            l_inputs = ', '.join([self.pop(i) for i in node.n_sig.l_inputs])
-            l_outputs = self.indent('return {}'.format(', '.join([self.pop(i) for i in node.n_sig.l_outputs])))
-            self[node] = f'def {n_name}({l_inputs}):\n{n_body}\n{l_outputs}\n'
-
-        elif isinstance(node, Function_Signature):
-            pass
-
-        elif isinstance(node, Simple_Assignment_Statement):
-            self[node] = f'{self.pop(node.n_lhs)} = {self.pop(node.n_rhs)}'
-
-        elif isinstance(node, Function_Call):
-            raise NotImplementedError
-        elif isinstance(node, Action):
-            raise NotImplementedError
-        elif isinstance(node, Row):
-            if len(node.l_items)==1:
-                self[node] = self.pop(node.l_items[0])
-            else:
-                self[node] = f'[{", ".join(self.pop(i) for i in node.l_items)}]'
-        elif isinstance(node, Row_List):
-            if len(node.l_items) == 0:
-                self[node] = 'np.array([])'
-            elif len(node.l_items) == 1:
-                self[node] = self.pop(node.l_items[0])
-            else:
-                self[node] = f'np.stack(({", ".join(self.pop(i) for i in node.l_items)}))'
-        elif isinstance(node, (Row, Matrix_Expression)):
-            src = self.pop(node.n_content)
-            self[node] = src if src.startswith('np.') else f'np.array({src})'
-        elif isinstance(node, Unary_Operation):
-            self[node] = f'{node.t_op.value}{self.pop(node.n_expr)}'
-        elif isinstance(node, Binary_Operation):
-            self[node] = f'{self.pop(node.n_lhs)} {node.t_op.value} {self.pop(node.n_rhs)}'
-            # todo: replace operation to numpy format
-        elif isinstance(node, Import_Statement):
-            raise NotImplementedError
-            self.write_head(node.__class__.__name__ +
-                            " for " +
-                            ".".join(node.get_chain_strings()),
-                            relation)
-        elif isinstance(node, Metric_Justification_Pragma):
-            raise NotImplementedError
-            self.write_head(node.__class__.__name__ +
-                            " for %s" % node.t_metric.value,
-                            relation)
-        elif isinstance(node, Naked_Expression_Statement):
-            self[node] = self.pop(node.n_expr)  # todo: determine a variable display or script call
-        else:
-            pass
-
-        # Top of Node Root
+            # Top of Node Root
         if n_parent is None:
             src = self.pop(node) + "\n"
             if self.fd:
                 self.fd.write(src)
             else:
                 print(src)
+
+    def identifier_visitor(self, node: Identifier, n_parent, relation):
+        self[node] = node.t_ident.value
+
+    def number_literal_visitor(self, node: Number_Literal, n_parent, relation):
+        self[node] = node.t_value.value
+
+    def char_array_literal_visitor(self, node: Char_Array_Literal, n_parent, relation):
+        self[node] = f'"{node.t_string.value}"'
+
+    def string_literal_visitor(self, node: String_Literal, n_parent, relation):
+        self[node] = f'"{node.t_string.value}"'
+
+    def special_block_visitor(self, node: Special_Block, n_parent, relation):
+        raise NotImplementedError
+
+    def entity_constraints_visitor(self, node: Entity_Constraints, n_parent, relation):
+        raise NotImplementedError
+
+    def script_file_visitor(self, node: Script_File, n_parent, relation):
+        self[node] = '\n'.join([self.pop(l) for l in [*node.l_functions, node.n_statements]])
+
+    def sequence_of_statements_visitor(self, node: Sequence_Of_Statements, n_parent, relation):
+        self[node] = '\n'.join([self.pop(l) for l in node.l_statements])
+
+    def function_definition_visitor(self, node: Function_Definition, n_parent, relation):
+        n_name = self.pop(node.n_sig.n_name)
+        n_body = self.indent(self.pop(node.n_body))
+        l_inputs = ', '.join([self.pop(i) for i in node.n_sig.l_inputs])
+        l_outputs = self.indent('return {}'.format(', '.join([self.pop(i) for i in node.n_sig.l_outputs])))
+        self[node] = f'def {n_name}({l_inputs}):\n{n_body}\n{l_outputs}\n'
+
+    def function_signature_visitor(self, node: Function_Signature, n_parent, relation):
+        pass
+
+    def simple_assignment_statement_visitor(self, node: Simple_Assignment_Statement, n_parent, relation):
+        self[node] = f'{self.pop(node.n_lhs)} = {self.pop(node.n_rhs)}'
+
+    def function_call_visitor(self, node: Function_Call, n_parent, relation):
+        raise NotImplementedError
+
+    def action_visitor(self, node: Action, n_parent, relation):
+        raise NotImplementedError
+
+    def row_visitor(self, node: Row, n_parent, relation):
+        if len(node.l_items) == 1:
+            self[node] = self.pop(node.l_items[0])
+        else:
+            self[node] = f'[{", ".join(self.pop(i) for i in node.l_items)}]'
+
+    def row_list_visitor(self, node: Row_List, n_parent, relation):
+        if len(node.l_items) == 0:
+            self[node] = 'np.array([])'
+        elif len(node.l_items) == 1:
+            self[node] = self.pop(node.l_items[0])
+        else:
+            self[node] = f'np.stack(({", ".join(self.pop(i) for i in node.l_items)}))'
+
+    def matrix_expression_visitor(self, node: Matrix_Expression, n_parent, relation):
+        src = self.pop(node.n_content)
+        self[node] = src if src.startswith('np.') else f'np.array({src})'
+
+    def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
+        self[node] = f'{node.t_op.value}{self.pop(node.n_expr)}'
+
+    def binary_operation_visitor(self, node: Binary_Operation, n_parent, relation):
+        self[node] = f'{self.pop(node.n_lhs)} {node.t_op.value} {self.pop(node.n_rhs)}'
+        # todo: replace operation to numpy format
+
+    def import_statement_visitor(self, node: Import_Statement, n_parent, relation):
+        raise NotImplementedError
+
+    def metric_justification_pragma_visitor(self, node: Metric_Justification_Pragma, n_parent, relation):
+        raise NotImplementedError
+
+    def naked_expression_statement_visitor(self, node: Naked_Expression_Statement, n_parent, relation):
+        self[node] = self.pop(node.n_expr)  # todo: determine a variable display or script call
 
