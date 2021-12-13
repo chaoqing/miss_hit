@@ -1,5 +1,4 @@
-A;
-3;
+A=3;
 
 function [out, out2] = func_example(A, B, C)
     out = [];
@@ -9,9 +8,10 @@ function [out, out2] = func_example(A, B, C)
 
     if C == 1
         out2 = out2 + 1;
+    elseif C == 2
     else
         for i = 1:A
-            out2 = addone(out2) + out(i);
+            out2 = addone(out2(1:5:2), end) + out(i);
         end
 
     end

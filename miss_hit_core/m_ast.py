@@ -27,6 +27,7 @@ import subprocess
 import re
 import os
 
+from collections import OrderedDict
 from copy import copy
 
 from miss_hit_core.config import Config
@@ -3354,15 +3355,16 @@ def dotpr(filename, root_node):
 ###################################################################
 # Matlab To Python/Numpy output: Python
 ###################################################################
-from collections import OrderedDict
-
-
 class Python_Visitor(AST_Visitor):
     def __init__(self, fd):
         super().__init__()
         self.fd = fd
         self.node_src = OrderedDict()
-        self.node_visitor = {}
+        pass_visitor = getattr(self, 'pass_visitor')
+        self.node_visitor = {
+            Function_Signature: pass_visitor,
+            Action: pass_visitor,
+        }
 
     def __setitem__(self, node, src):
         self.node_src[node.uid] = src
@@ -3388,6 +3390,7 @@ class Python_Visitor(AST_Visitor):
 
         except AttributeError:
             self[node] = ''
+
         except NotImplementedError:
             self[node] = ''
 
@@ -3398,6 +3401,23 @@ class Python_Visitor(AST_Visitor):
                 self.fd.write(src)
             else:
                 print(src)
+
+    def pass_visitor(self, node: Node, n_parent, relation):
+        pass
+
+    def general_for_statement_visitor(self, node: General_For_Statement, n_parent, relation):
+        self[node] = f'for {self.pop(node.n_ident)} in {self.pop(node.n_expr)}):\n' \
+            f'{self.indent(self.pop(node.n_body))}\n'
+
+    def range_expression_visitor(self, node: Range_Expression, n_parent, relation):
+        self[node] = f'range({self.pop(node.n_first)}, ' \
+            f'{self.pop(node.n_last)}, ' \
+            f'{"" if node.n_stride is None else self.pop(node.n_stride)})'
+
+    def reference_visitor(self, node: Reference, n_parent, relation):
+        # TODO: determine reference is function call or slice
+        args = ', '.join(self.pop(i) for i in node.l_args)
+        self[node] = f'{self.pop(node.n_ident)}[{args}]'
 
     def identifier_visitor(self, node: Identifier, n_parent, relation):
         self[node] = node.t_ident.value
@@ -3430,17 +3450,22 @@ class Python_Visitor(AST_Visitor):
         l_outputs = self.indent('return {}'.format(', '.join([self.pop(i) for i in node.n_sig.l_outputs])))
         self[node] = f'def {n_name}({l_inputs}):\n{n_body}\n{l_outputs}\n'
 
-    def function_signature_visitor(self, node: Function_Signature, n_parent, relation):
-        pass
-
     def simple_assignment_statement_visitor(self, node: Simple_Assignment_Statement, n_parent, relation):
         self[node] = f'{self.pop(node.n_lhs)} = {self.pop(node.n_rhs)}'
 
     def function_call_visitor(self, node: Function_Call, n_parent, relation):
         raise NotImplementedError
 
-    def action_visitor(self, node: Action, n_parent, relation):
-        raise NotImplementedError
+    def if_statement_visitor(self, node: If_Statement, n_parent, relation):
+        l_actions = []
+        for i, a in enumerate(node.l_actions):
+            key = "else" if a.n_expr is None else "else if" if i>0 else "if"
+            n_expr = '' if a.n_expr is None else ' '+self.pop(a.n_expr)
+            n_body = self.pop(a.n_body)
+            n_body = self.indent('pass' if len(n_body)==0 else n_body)
+            l_actions.append(f'{key}{n_expr}:\n{n_body}')
+
+        self[node] = '\n'.join(l_actions)
 
     def row_visitor(self, node: Row, n_parent, relation):
         if len(node.l_items) == 1:
@@ -3465,7 +3490,7 @@ class Python_Visitor(AST_Visitor):
 
     def binary_operation_visitor(self, node: Binary_Operation, n_parent, relation):
         self[node] = f'{self.pop(node.n_lhs)} {node.t_op.value} {self.pop(node.n_rhs)}'
-        # todo: replace operation to numpy format
+        # TODO: replace operation to numpy format
 
     def import_statement_visitor(self, node: Import_Statement, n_parent, relation):
         raise NotImplementedError
@@ -3474,5 +3499,6 @@ class Python_Visitor(AST_Visitor):
         raise NotImplementedError
 
     def naked_expression_statement_visitor(self, node: Naked_Expression_Statement, n_parent, relation):
-        self[node] = self.pop(node.n_expr)  # todo: determine a variable display or script call
+        self[node] = self.pop(node.n_expr)
+        # TODO: determine a variable display or script call
 
