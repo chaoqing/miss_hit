@@ -3365,7 +3365,7 @@ class Python_Visitor(AST_Visitor):
             Function_Signature: pass_visitor,
             Action: pass_visitor,
         }
-        self.numpy_package_alias = 'mnp'
+        self.func_alias = lambda n: f'mnp.{n}'
 
     def __setitem__(self, node, src):
         self.node_src[node.uid] = src
@@ -3375,7 +3375,7 @@ class Python_Visitor(AST_Visitor):
 
     @staticmethod
     def indent(src: str):
-        return '\n'.join([f'  {l}' for l in src.split('\n')])
+        return '\n'.join([f'    {l}' for l in src.split('\n')])
 
     def visit(self, node, n_parent, relation):
         pass
@@ -3426,13 +3426,26 @@ class Python_Visitor(AST_Visitor):
     def reference_visitor(self, node: Reference, n_parent, relation):
         # TODO: determine reference is function call or slice
         args = ', '.join(self.pop(i) for i in node.l_args)
-        self[node] = f'{self.pop(node.n_ident)}({args})'
+        is_index = False
+        if any(isinstance(i, (Range_Expression, Reshape)) for i in node.l_args):
+            # TODO: check 'end' expression
+            is_index = True
+        elif n_parent is not None:
+            l_lhs = []
+            if isinstance(n_parent, Simple_Assignment_Statement):
+                l_lhs.append(n_parent.n_lhs)
+            elif isinstance(n_parent, Compound_Assignment_Statement):
+                l_lhs.extend(n_parent.l_lhs)
+
+            if any(i is node for i in l_lhs):
+                is_index = True
+        self[node] = f'{self.pop(node.n_ident)}{"[" if is_index else "("}{args}{"]" if is_index else ")"}'
 
     def identifier_visitor(self, node: Identifier, n_parent, relation):
         self[node] = node.t_ident.value
 
     def number_literal_visitor(self, node: Number_Literal, n_parent, relation):
-        self[node] = node.t_value.value
+        self[node] = node.t_value.value.replace('i', 'j')
 
     def char_array_literal_visitor(self, node: Char_Array_Literal, n_parent, relation):
         self[node] = f"'{node.t_string.value}'"
@@ -3473,7 +3486,7 @@ class Python_Visitor(AST_Visitor):
     def if_statement_visitor(self, node: If_Statement, n_parent, relation):
         l_actions = []
         for i, a in enumerate(node.l_actions):
-            key = "else" if a.n_expr is None else "else if" if i>0 else "if"
+            key = "else" if a.n_expr is None else "elif" if i > 0 else "if"
             n_expr = '' if a.n_expr is None else ' '+self.pop(a.n_expr)
             n_body = self.pop(a.n_body)
             n_body = self.indent('pass' if len(n_body)==0 else n_body)
@@ -3499,25 +3512,45 @@ class Python_Visitor(AST_Visitor):
 
     def row_list_visitor(self, node: Row_List, n_parent, relation):
         if len(node.l_items) == 0:
-            self[node] = f'{self.numpy_package_alias}.array([])'
+            self[node] = f'{self.func_alias("array")}([])'
         elif len(node.l_items) == 1:
             self[node] = self.pop(node.l_items[0])
         else:
-            self[node] = f'{self.numpy_package_alias}.stack(({", ".join(self.pop(i) for i in node.l_items)}))'
+            self[node] = f'{self.func_alias("stack")}(({", ".join(self.pop(i) for i in node.l_items)}))'
 
     def matrix_expression_visitor(self, node: Matrix_Expression, n_parent, relation):
         src = self.pop(node.n_content)
-        self[node] = src if src.startswith(f'{self.numpy_package_alias}.') else f'{self.numpy_package_alias}.array({src})'
+        self[node] = src if src.startswith(self.func_alias("")) else f'{self.func_alias("array")}({src})'
 
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
-        self[node] = f'{node.t_op.value}{self.pop(node.n_expr)}'
+        t_op = node.t_op.value
+        n_expr = self.pop(node.n_expr)
+        if t_op in ("'", ".'"):
+            self[node] = f'({n_expr}).T'
+        else:
+            self[node] = f'{t_op}({n_expr})'
 
     def binary_logical_operation_visitor(self, node: Binary_Logical_Operation, n_parent, relation):
-        self[node] = f'({self.pop(node.n_lhs)}) {node.t_op.value} ({self.pop(node.n_rhs)})'
+        t_op = {'&&': 'and', '||': 'or'}.get(node.t_op.value, node.t_op.value)
+        self[node] = f'({self.pop(node.n_lhs)}) {t_op} ({self.pop(node.n_rhs)})'
         # TODO: replace operation to numpy format
 
     def binary_operation_visitor(self, node: Binary_Operation, n_parent, relation):
-        self[node] = f'({self.pop(node.n_lhs)}) {node.t_op.value} ({self.pop(node.n_rhs)})'
+        t_op = node.t_op.value
+        n_lhs = self.pop(node.n_lhs)
+        n_rhs = self.pop(node.n_rhs)
+        if t_op == '\\':
+            self[node] = f'{self.func_alias("mldivide")}({n_lhs}, {n_rhs})'
+        elif t_op == '/':
+            self[node] = f'{self.func_alias("mrdivide")}({n_lhs}, {n_rhs})'
+        elif t_op == '*':
+            self[node] = f'{self.func_alias("dot")}({n_lhs}, {n_rhs})'
+        elif t_op == '~=':
+            self[node] = f'({n_lhs}) != ({n_rhs})'
+        elif t_op in ('./', '.*', '.^', ):
+            self[node] = f'({n_lhs}) {t_op[-1:]} ({n_rhs})'
+        else:
+            self[node] = f'({n_lhs}) {t_op} ({n_rhs})'
         # TODO: replace operation to numpy format
 
     def import_statement_visitor(self, node: Import_Statement, n_parent, relation):
