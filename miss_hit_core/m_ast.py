@@ -3365,6 +3365,7 @@ class Python_Visitor(AST_Visitor):
             Function_Signature: pass_visitor,
             Action: pass_visitor,
         }
+        self.numpy_package_alias = 'mnp'
 
     def __setitem__(self, node, src):
         self.node_src[node.uid] = src
@@ -3406,7 +3407,7 @@ class Python_Visitor(AST_Visitor):
         pass
 
     def general_for_statement_visitor(self, node: General_For_Statement, n_parent, relation):
-        self[node] = f'for {self.pop(node.n_ident)} in {self.pop(node.n_expr)}):\n' \
+        self[node] = f'for {self.pop(node.n_ident)} in {self.pop(node.n_expr)}:\n' \
             f'{self.indent(self.pop(node.n_body))}\n'
 
     def range_expression_visitor(self, node: Range_Expression, n_parent, relation):
@@ -3417,7 +3418,7 @@ class Python_Visitor(AST_Visitor):
     def reference_visitor(self, node: Reference, n_parent, relation):
         # TODO: determine reference is function call or slice
         args = ', '.join(self.pop(i) for i in node.l_args)
-        self[node] = f'{self.pop(node.n_ident)}[{args}]'
+        self[node] = f'{self.pop(node.n_ident)}({args})'
 
     def identifier_visitor(self, node: Identifier, n_parent, relation):
         self[node] = node.t_ident.value
@@ -3475,15 +3476,15 @@ class Python_Visitor(AST_Visitor):
 
     def row_list_visitor(self, node: Row_List, n_parent, relation):
         if len(node.l_items) == 0:
-            self[node] = 'np.array([])'
+            self[node] = f'{self.numpy_package_alias}.array([])'
         elif len(node.l_items) == 1:
             self[node] = self.pop(node.l_items[0])
         else:
-            self[node] = f'np.stack(({", ".join(self.pop(i) for i in node.l_items)}))'
+            self[node] = f'{self.numpy_package_alias}.stack(({", ".join(self.pop(i) for i in node.l_items)}))'
 
     def matrix_expression_visitor(self, node: Matrix_Expression, n_parent, relation):
         src = self.pop(node.n_content)
-        self[node] = src if src.startswith('np.') else f'np.array({src})'
+        self[node] = src if src.startswith(f'{self.numpy_package_alias}.') else f'{self.numpy_package_alias}.array({src})'
 
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
         self[node] = f'{node.t_op.value}{self.pop(node.n_expr)}'
