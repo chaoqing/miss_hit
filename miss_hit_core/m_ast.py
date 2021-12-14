@@ -3360,7 +3360,7 @@ class Python_Visitor(AST_Visitor):
         super().__init__()
         self.fd = fd
         self.node_src = OrderedDict()
-        pass_visitor = getattr(self, 'pass_visitor')
+        pass_visitor = getattr(self, '_pass_visitor')
         self.node_visitor = {
             Function_Signature: pass_visitor,
             Action: pass_visitor,
@@ -3397,23 +3397,31 @@ class Python_Visitor(AST_Visitor):
 
             # Top of Node Root
         if n_parent is None:
+            # TODO: remove redundant bracket with python formatter
             src = self.pop(node) + "\n"
             if self.fd:
                 self.fd.write(src)
             else:
                 print(src)
 
-    def pass_visitor(self, node: Node, n_parent, relation):
+    def _pass_visitor(self, node: Node, n_parent, relation):
         pass
 
     def general_for_statement_visitor(self, node: General_For_Statement, n_parent, relation):
         self[node] = f'for {self.pop(node.n_ident)} in {self.pop(node.n_expr)}:\n' \
             f'{self.indent(self.pop(node.n_body))}\n'
 
+    def reshape_visitor(self, node: Reshape, n_parent, relation):
+        self[node] = ':'
+
     def range_expression_visitor(self, node: Range_Expression, n_parent, relation):
         self[node] = f'range({self.pop(node.n_first)}, ' \
             f'{self.pop(node.n_last)}, ' \
             f'{"" if node.n_stride is None else self.pop(node.n_stride)})'
+
+    def cell_reference_visitor(self, node: Cell_Reference, n_parent, relation):
+        args = ', '.join(self.pop(i) for i in node.l_args)
+        self[node] = f'{self.pop(node.n_ident)}[{args}]'
 
     def reference_visitor(self, node: Reference, n_parent, relation):
         # TODO: determine reference is function call or slice
@@ -3427,10 +3435,10 @@ class Python_Visitor(AST_Visitor):
         self[node] = node.t_value.value
 
     def char_array_literal_visitor(self, node: Char_Array_Literal, n_parent, relation):
-        self[node] = f'"{node.t_string.value}"'
+        self[node] = f"'{node.t_string.value}'"
 
     def string_literal_visitor(self, node: String_Literal, n_parent, relation):
-        self[node] = f'"{node.t_string.value}"'
+        self[node] = f"'{node.t_string.value}'"
 
     def special_block_visitor(self, node: Special_Block, n_parent, relation):
         raise NotImplementedError
@@ -3451,11 +3459,16 @@ class Python_Visitor(AST_Visitor):
         l_outputs = self.indent('return {}'.format(', '.join([self.pop(i) for i in node.n_sig.l_outputs])))
         self[node] = f'def {n_name}({l_inputs}):\n{n_body}\n{l_outputs}\n'
 
+    def compound_assignment_statement_visitor(self, node: Compound_Assignment_Statement, n_parent, relation):
+        l_lhs = ', '.join([i if i!='~' else '_' for i in map(self.pop, node.l_lhs)])
+        self[node] = f'{l_lhs} = {self.pop(node.n_rhs)}'
+
     def simple_assignment_statement_visitor(self, node: Simple_Assignment_Statement, n_parent, relation):
         self[node] = f'{self.pop(node.n_lhs)} = {self.pop(node.n_rhs)}'
 
     def function_call_visitor(self, node: Function_Call, n_parent, relation):
-        raise NotImplementedError
+        args = ', '.join(self.pop(i) for i in node.l_args)
+        self[node] = f'{self.pop(node.n_name)}({args})'
 
     def if_statement_visitor(self, node: If_Statement, n_parent, relation):
         l_actions = []
@@ -3467,6 +3480,16 @@ class Python_Visitor(AST_Visitor):
             l_actions.append(f'{key}{n_expr}:\n{n_body}')
 
         self[node] = '\n'.join(l_actions)
+
+    def continue_statement_visitor(self, node: Continue_Statement, n_parent, relation):
+        self[node] = 'continue'
+
+    def break_statement_visitor(self, node: Break_Statement, n_parent, relation):
+        self[node] = 'break'
+
+    def return_statement_visitor(self, node: Return_Statement, n_parent, relation):
+        self[node] = 'return'
+        # TODO: fix the return value
 
     def row_visitor(self, node: Row, n_parent, relation):
         if len(node.l_items) == 1:
@@ -3489,8 +3512,12 @@ class Python_Visitor(AST_Visitor):
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
         self[node] = f'{node.t_op.value}{self.pop(node.n_expr)}'
 
+    def binary_logical_operation_visitor(self, node: Binary_Logical_Operation, n_parent, relation):
+        self[node] = f'({self.pop(node.n_lhs)}) {node.t_op.value} ({self.pop(node.n_rhs)})'
+        # TODO: replace operation to numpy format
+
     def binary_operation_visitor(self, node: Binary_Operation, n_parent, relation):
-        self[node] = f'{self.pop(node.n_lhs)} {node.t_op.value} {self.pop(node.n_rhs)}'
+        self[node] = f'({self.pop(node.n_lhs)}) {node.t_op.value} ({self.pop(node.n_rhs)})'
         # TODO: replace operation to numpy format
 
     def import_statement_visitor(self, node: Import_Statement, n_parent, relation):
