@@ -3398,6 +3398,7 @@ class Python_Visitor(AST_Visitor):
             # Top of Node Root
         if n_parent is None:
             # TODO: remove redundant bracket with python formatter
+            #     `black -i -C -S {}.py` can only solve tiny part of it
             src = self.pop(node) + "\n"
             if self.fd:
                 self.fd.write(src)
@@ -3521,6 +3522,7 @@ class Python_Visitor(AST_Visitor):
     def matrix_expression_visitor(self, node: Matrix_Expression, n_parent, relation):
         src = self.pop(node.n_content)
         self[node] = src if src.startswith(self.func_alias("")) else f'{self.func_alias("array")}({src})'
+        # TODO: be careful with empty func_alias
 
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
         t_op = node.t_op.value
