@@ -3398,7 +3398,7 @@ class Python_Visitor(AST_Visitor):
             # Top of Node Root
         if n_parent is None:
             # TODO: remove redundant bracket with python formatter
-            #     `black -i -C -S {}.py` can only solve tiny part of it
+            #     `black -i -S {}.py` can only solve tiny part of it
             src = self.pop(node) + "\n"
             if self.fd:
                 self.fd.write(src)
@@ -3416,20 +3416,35 @@ class Python_Visitor(AST_Visitor):
         self[node] = ':'
 
     def range_expression_visitor(self, node: Range_Expression, n_parent, relation):
+        n_stride = "" if node.n_stride is None else f', {self.pop(node.n_stride)}'
         self[node] = f'range({self.pop(node.n_first)}, ' \
-            f'{self.pop(node.n_last)}, ' \
-            f'{"" if node.n_stride is None else self.pop(node.n_stride)})'
+            f'{self.pop(node.n_last)}' \
+            f'{n_stride})'
 
     def cell_reference_visitor(self, node: Cell_Reference, n_parent, relation):
         args = ', '.join(self.pop(i) for i in node.l_args)
         self[node] = f'{self.pop(node.n_ident)}[{args}]'
 
+    def node_contains_end(self, node: (Identifier, Binary_Operation, Range_Expression)):
+        if isinstance(node, Identifier):
+            return node.t_ident.value == 'end'
+        if isinstance(node, Range_Expression):
+            return (self.node_contains_end(node.n_first)
+                    or self.node_contains_end(node.n_last)
+                    or self.node_contains_end(node.n_stride))
+        if isinstance(node, Binary_Operation):
+            return (self.node_contains_end(node.n_lhs)
+                    or self.node_contains_end(node.n_rhs))
+        return False
+
     def reference_visitor(self, node: Reference, n_parent, relation):
         # TODO: determine reference is function call or slice
         args = ', '.join(self.pop(i) for i in node.l_args)
         is_index = False
-        if any(isinstance(i, (Range_Expression, Reshape)) for i in node.l_args):
-            # TODO: check 'end' expression
+
+        if any(isinstance(i, Reshape) for i in node.l_args):
+            is_index = True
+        elif any(self.node_contains_end(i) for i in node.l_args):
             is_index = True
         elif n_parent is not None:
             l_lhs = []
@@ -3527,32 +3542,42 @@ class Python_Visitor(AST_Visitor):
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
         t_op = node.t_op.value
         n_expr = self.pop(node.n_expr)
+
+        bracket = ('', '') if isinstance(node.n_expr, (
+            Identifier, Number_Literal,
+            String_Literal, Char_Array_Literal,)) else ('(', ')')
+
         if t_op in ("'", ".'"):
-            self[node] = f'({n_expr}).T'
+            self[node] = f'{bracket[0]}{n_expr}{bracket[1]}.T'
         else:
-            self[node] = f'{t_op}({n_expr})'
+            self[node] = f'{t_op}{bracket[0]}{n_expr}{bracket[1]}'
 
     def binary_logical_operation_visitor(self, node: Binary_Logical_Operation, n_parent, relation):
-        t_op = {'&&': 'and', '||': 'or'}.get(node.t_op.value, node.t_op.value)
-        self[node] = f'({self.pop(node.n_lhs)}) {t_op} ({self.pop(node.n_rhs)})'
-        # TODO: replace operation to numpy format
+        self.binary_operation_visitor(node, n_parent, relation)
 
     def binary_operation_visitor(self, node: Binary_Operation, n_parent, relation):
         t_op = node.t_op.value
         n_lhs = self.pop(node.n_lhs)
         n_rhs = self.pop(node.n_rhs)
-        if t_op == '\\':
-            self[node] = f'{self.func_alias("mldivide")}({n_lhs}, {n_rhs})'
-        elif t_op == '/':
-            self[node] = f'{self.func_alias("mrdivide")}({n_lhs}, {n_rhs})'
-        elif t_op == '*':
-            self[node] = f'{self.func_alias("dot")}({n_lhs}, {n_rhs})'
-        elif t_op == '~=':
-            self[node] = f'({n_lhs}) != ({n_rhs})'
-        elif t_op in ('./', '.*', '.^', ):
-            self[node] = f'({n_lhs}) {t_op[-1:]} ({n_rhs})'
-        else:
-            self[node] = f'({n_lhs}) {t_op} ({n_rhs})'
+
+        if t_op in ('\\', '/', '*'):
+            func_name = {'\\': 'mldivide', '/': 'mrdivide', '*': 'dot'}[t_op]
+            self[node] = f'{self.func_alias(func_name)}({n_lhs}, {n_rhs})'
+            return
+
+        t_op = {
+            '~=': '!=', '&&': 'and', '||': 'or',
+            './': '/', '.*': '*', '.^': '^'
+        }.get(t_op, t_op)
+
+        bracket = [('', '') if isinstance(i, (
+            Identifier, Number_Literal,
+            String_Literal, Char_Array_Literal,
+            Function_Call, Reference, Cell_Reference,
+        ))
+                   else ('(', ')') for i in (node.n_lhs, node.n_rhs)]
+
+        self[node] = f'{bracket[0][0]}{n_lhs}{bracket[0][1]} {t_op} {bracket[1][0]}{n_rhs}{bracket[1][1]}'
         # TODO: replace operation to numpy format
 
     def import_statement_visitor(self, node: Import_Statement, n_parent, relation):
