@@ -3,6 +3,9 @@ __pycache__
 .idea/
 .vscode/
 
+
+# Generated files
+tests/mat2np/*.py
 *.pdf
 
 # Unpacked Simulink models
