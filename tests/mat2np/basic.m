@@ -20,6 +20,14 @@ function [out, out2] = func_example(A, B, C)
     else
         for i = 1:A
             continue
+            switch A
+                case 2
+                    C = C+1
+                case 4
+                    C = C+2
+                otherwise
+                    error('f');
+            end
             out2 = addone(out2(1:5:2)./A, end) + out(i)\out(:);
             break
         end

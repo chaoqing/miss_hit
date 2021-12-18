@@ -164,6 +164,9 @@ class Python_Visitor(AST_Visitor):
     def entity_constraints_visitor(self, node: Entity_Constraints, n_parent, relation):
         raise NotImplementedError
 
+    def function_file_visitor(self, node: Function_File, n_parent, relation):
+        self[node] = '\n'.join([self.pop(l) for l in node.l_functions])
+
     def script_file_visitor(self, node: Script_File, n_parent, relation):
         self[node] = '\n'.join([self.pop(l) for l in [*node.l_functions, node.n_statements]])
 
@@ -187,6 +190,29 @@ class Python_Visitor(AST_Visitor):
     def function_call_visitor(self, node: Function_Call, n_parent, relation):
         args = ', '.join(self.pop(i) for i in node.l_args)
         self[node] = f'{self.pop(node.n_name)}({args})'
+
+    def switch_statement_visitor(self, node: Switch_Statement, n_parent, relation):
+        l_actions = []
+        n_expr_l = self.pop(node.n_expr)
+
+        bracket = ('', '') if isinstance(node.n_expr, (
+            Identifier, Number_Literal,
+            String_Literal, Char_Array_Literal,)) else ('(', ')')
+
+        n_expr_l = f'{bracket[0]}{n_expr_l}{bracket[1]}'
+
+        for i, a in enumerate(node.l_actions):
+            key = "else" if a.n_expr is None else "elif" if i > 0 else "if"
+            n_expr_r = '' if a.n_expr is None else self.pop(a.n_expr)
+            bracket = ('', '') if isinstance(a.n_expr, (
+                Identifier, Number_Literal,
+                String_Literal, Char_Array_Literal,)) else ('(', ')')
+            n_expr = '' if a.n_expr is None else f' {n_expr_l} == {bracket[0]}{n_expr_r}{bracket[1]}'
+            n_body = self.pop(a.n_body)
+            n_body = self.indent('pass' if len(n_body) == 0 else n_body)
+            l_actions.append(f'{key}{n_expr}:\n{n_body}')
+
+        self[node] = '\n'.join(l_actions)
 
     def if_statement_visitor(self, node: If_Statement, n_parent, relation):
         l_actions = []

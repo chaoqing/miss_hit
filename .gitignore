@@ -5,7 +5,7 @@ __pycache__
 
 
 # Generated files
-tests/mat2np/*.py
+tests/mat2np/**/*.py
 *.pdf
 
 # Unpacked Simulink models
