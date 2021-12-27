@@ -8,7 +8,7 @@ ts = linspace(-5,15,2^9);
 [Ts,T] = ndgrid(ts,t);
 y = sinc(Ts - T)*x;
 
-f = b(y);
+f = my_fft(y);
 
 disp([y, f]);
 %plot(y, 'o')

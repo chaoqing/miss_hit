@@ -104,36 +104,35 @@ class Python_Visitor(AST_Visitor):
 
     def range_expression_visitor(self, node: Range_Expression, n_parent, relation):
         n_stride = "" if node.n_stride is None else f'{self.pop(node.n_stride)}, '
-        self[node] = (f'{self.func_alias("colon")}('
+        self[node] = (f'colon('
                       f'{self.pop(node.n_first)}, '
                       f'{n_stride}'
                       f'{self.pop(node.n_last)})'
                       )
 
     def cell_reference_visitor(self, node: Cell_Reference, n_parent, relation):
-        args = ', '.join(self.pop(i) for i in node.l_args)
+        args = ', '.join(f'{self.pop(i)}-1' for i in node.l_args)
         self[node] = f'{self.pop(node.n_ident)}[{args}]'
 
-    def node_contains_end(self, node: (Identifier, Binary_Operation, Range_Expression)):
+    def __node_contains_end(self, node: (Identifier, Binary_Operation, Range_Expression)):
         if isinstance(node, Identifier):
             return node.t_ident.value == 'end'
         if isinstance(node, Range_Expression):
-            return (self.node_contains_end(node.n_first)
-                    or self.node_contains_end(node.n_last)
-                    or self.node_contains_end(node.n_stride))
+            return (self.__node_contains_end(node.n_first)
+                    or self.__node_contains_end(node.n_last)
+                    or self.__node_contains_end(node.n_stride))
         if isinstance(node, Binary_Operation):
-            return (self.node_contains_end(node.n_lhs)
-                    or self.node_contains_end(node.n_rhs))
+            return (self.__node_contains_end(node.n_lhs)
+                    or self.__node_contains_end(node.n_rhs))
         return False
 
     def reference_visitor(self, node: Reference, n_parent, relation):
         # TODO: determine reference is function call or slice
-        args = ', '.join(self.pop(i) for i in node.l_args)
         is_index = False
 
         if any(isinstance(i, Reshape) for i in node.l_args):
             is_index = True
-        elif any(self.node_contains_end(i) for i in node.l_args):
+        elif any(self.__node_contains_end(i) for i in node.l_args):
             is_index = True
         elif n_parent is not None:
             l_lhs = []
@@ -144,6 +143,8 @@ class Python_Visitor(AST_Visitor):
 
             if any(i is node for i in l_lhs):
                 is_index = True
+
+        args = ', '.join(f'{self.pop(i)}{"-1" if is_index else ""}' for i in node.l_args)
         self[node] = f'{self.pop(node.n_ident)}{"[" if is_index else "("}{args}{"]" if is_index else ")"}'
 
     def identifier_visitor(self, node: Identifier, n_parent, relation):
@@ -165,10 +166,22 @@ class Python_Visitor(AST_Visitor):
         raise NotImplementedError
 
     def function_file_visitor(self, node: Function_File, n_parent, relation):
-        self[node] = '\n'.join([self.pop(l) for l in node.l_functions])
+        header = ('import mat2py.core as mp\n'
+                  'from mat2py.core import (end, colon)\n')
+
+        func = '\n'.join([self.pop(l) for l in node.l_functions])
+        self[node] = '\n'.join([header, func])
 
     def script_file_visitor(self, node: Script_File, n_parent, relation):
-        self[node] = '\n'.join([self.pop(l) for l in [*node.l_functions, node.n_statements]])
+        header = ('import mat2py.core as mp\n'
+                  'from mat2py.core import (end, colon)\n')
+        body = (f'def main():\n'
+                f'{self.indent(self.pop(node.n_statements))}\n\n\n'
+                f'if __name__ == "__main__":\n'
+                f'{self.indent("main()")}')
+
+        func = '\n'.join([self.pop(l) for l in node.l_functions])
+        self[node] = '\n'.join([header, func, body])
 
     def sequence_of_statements_visitor(self, node: Sequence_Of_Statements, n_parent, relation):
         self[node] = '\n'.join([self.pop(l) for l in node.l_statements])
@@ -275,14 +288,14 @@ class Python_Visitor(AST_Visitor):
         n_lhs = self.pop(node.n_lhs)
         n_rhs = self.pop(node.n_rhs)
 
-        if t_op in ('\\', '/', '*'):
+        if t_op in ('\\', '/', '*') and not isinstance(node.n_rhs, Number_Literal):
             func_name = {'\\': 'mldivide', '/': 'mrdivide', '*': 'dot'}[t_op]
             self[node] = f'{self.func_alias(func_name)}({n_lhs}, {n_rhs})'
             return
 
         t_op = {
             '~=': '!=', '&&': 'and', '||': 'or',
-            './': '/', '.*': '*', '.^': '^'
+            './': '/', '\\': '/', '.*': '*', '.^': '^'
         }.get(t_op, t_op)
 
         bracket = [('', '') if isinstance(i, (
