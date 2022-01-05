@@ -112,12 +112,13 @@ class Python_Visitor(AST_Visitor):
             node.n_first, node.n_stride, node.n_last))
 
         inside_index = isinstance(n_parent, Reference) and getattr(n_parent, "is_index")
-        bra, ket = ("", "") if inside_index else ("I[", "]")
-        n_stride = f':{bra1}{self.pop(node.n_stride)}{ket1}' if node.n_stride is not None else ''
+        bra, ket = ("", "") if inside_index else ("colon(", ")")
+        sep = ":" if inside_index else ", "
+        n_stride = f'{sep}{bra1}{self.pop(node.n_stride)}{ket1}' if node.n_stride is not None else ''
         self[node] = (f'{bra}'
                       f'{bra0}{n_first}{ket0}'
                       f'{n_stride}'
-                      f':{bra2}{n_last}{ket2}'
+                      f'{sep}{bra2}{n_last}{ket2}'
                       f'{ket}'
                       )
 
@@ -125,9 +126,11 @@ class Python_Visitor(AST_Visitor):
         args = ', '.join(f'{self.pop(i)}' for i in node.l_args)
         self[node] = f'{self.pop(node.n_ident)}[I[{args}]]'
 
-    def __node_contains_end(self, node: (Identifier, Binary_Operation, Range_Expression)):
+    def __node_contains_end(self, node: (Identifier, Reshape, Binary_Operation, Range_Expression)):
         if isinstance(node, Identifier):
             return node.t_ident.value == 'end'
+        if isinstance(node, Reshape):
+            return True
         if isinstance(node, Range_Expression):
             return (self.__node_contains_end(node.n_first)
                     or self.__node_contains_end(node.n_last)
@@ -140,9 +143,7 @@ class Python_Visitor(AST_Visitor):
     def __is_index(self, node: Reference, n_parent, relation):
         is_index = False
 
-        if any(isinstance(i, Reshape) for i in node.l_args):
-            is_index = True
-        elif any(self.__node_contains_end(i) for i in node.l_args):
+        if any(self.__node_contains_end(i) for i in node.l_args):
             is_index = True
         elif isinstance(n_parent, (
                 Simple_Assignment_Statement,
@@ -180,14 +181,14 @@ class Python_Visitor(AST_Visitor):
 
     def function_file_visitor(self, node: Function_File, n_parent, relation):
         header = ('import mat2py.core as mp\n'
-                  'from mat2py.core import (end, I)\n')
+                  'from mat2py.core import (end, I, colon, M)\n')
 
         func = '\n'.join([self.pop(l) for l in node.l_functions])
         self[node] = '\n'.join([header, func])
 
     def script_file_visitor(self, node: Script_File, n_parent, relation):
         header = ('import mat2py.core as mp\n'
-                  'from mat2py.core import (end, I)\n')
+                  'from mat2py.core import (end, I, colon, M)\n')
         body = (f'def main():\n'
                 f'{self.indent(self.pop(node.n_statements))}\n\n\n'
                 f'if __name__ == "__main__":\n'
@@ -273,23 +274,24 @@ class Python_Visitor(AST_Visitor):
 
     def row_list_visitor(self, node: Row_List, n_parent, relation):
         if len(node.l_items) == 0:
-            self[node] = f'{self.func_alias("array")}([])'
-        elif len(node.l_items) == 1:
-            self[node] = self.pop(node.l_items[0])
+            self[node] = f'[]'
         else:
-            self[node] = f'{self.func_alias("stack")}(({", ".join(self.pop(i) for i in node.l_items)}))'
+            no_indent = len(node.l_items) == 1
+            self[node] = f'{", ".join(self.pop(i) for i in node.l_items)}{"" if no_indent else ", "}'
 
     def matrix_expression_visitor(self, node: Matrix_Expression, n_parent, relation):
-        src = self.pop(node.n_content)
-        self[node] = src if src.startswith(self.func_alias("")) else f'{self.func_alias("array")}({src})'
+        self[node] = f'M[{self.pop(node.n_content)}]'
         # TODO: be careful with empty func_alias
 
     def unary_operation_visitor(self, node: Unary_Operation, n_parent, relation):
         t_op = node.t_op.value
-        n_expr = self.pop(node.n_expr)
-
         bra, ket = self.__bracket(node.n_expr)
-        self[node] = f'{bra}{n_expr}{ket}'+(".T" if t_op in ("'", ".'") else "")
+        n_expr = f'{bra}{self.pop(node.n_expr)}{ket}'
+
+        if t_op in ("'", ".'"):
+            self[node] = f'{n_expr}.T'
+        else:
+            self[node] = f'{t_op}{n_expr}'
 
     def binary_logical_operation_visitor(self, node: Binary_Logical_Operation, n_parent, relation):
         self.binary_operation_visitor(node, n_parent, relation)
@@ -299,9 +301,9 @@ class Python_Visitor(AST_Visitor):
         n_lhs = self.pop(node.n_lhs)
         n_rhs = self.pop(node.n_rhs)
 
-        if t_op in ('\\', '/', '*') and not isinstance(node.n_rhs, Number_Literal):
-            func_name = {'\\': 'mldivide', '/': 'mrdivide', '*': 'dot'}[t_op]
-            self[node] = f'{self.func_alias(func_name)}({n_lhs}, {n_rhs})'
+        if t_op in ('\\', '/', '*', '.\\') and not isinstance(node.n_rhs, Number_Literal):
+            func_name = {'\\': 'mldivide', '/': 'mrdivide', '*': 'mtimes', '.\\': 'ldivide'}[t_op]
+            self[node] = f'{func_name}({n_lhs}, {n_rhs})'
             return
 
         t_op = {

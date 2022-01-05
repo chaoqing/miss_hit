@@ -9,8 +9,9 @@ clear A;
 
 function [out, out2] = func_example(A, B, C)
     out = [];
+    out = [1 2 3];
     out = [1;2;3];
-    out = [-.1 -0.1 .1; 1, func_example(A, B, C)+out+3, 3];
+    out = [-.1 -0.1 .1; 1, func_example(A, B, C)*out+out+3, 3];
     out2 = [out; out] / B;
     out2 = out{A, B};
 
