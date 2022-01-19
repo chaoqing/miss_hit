@@ -112,8 +112,8 @@ class Python_Visitor(AST_Visitor):
             node.n_first, node.n_stride, node.n_last))
 
         inside_index = isinstance(n_parent, Reference) and getattr(n_parent, "is_index")
-        bra, ket = ("", "") if inside_index else ("colon(", ")")
-        sep = ":" if inside_index else ", "
+        bra, ket = ("", "") if inside_index else ("M[", "]")
+        sep = ":"
         n_stride = f'{sep}{bra1}{self.pop(node.n_stride)}{ket1}' if node.n_stride is not None else ''
         self[node] = (f'{bra}'
                       f'{bra0}{n_first}{ket0}'
@@ -180,15 +180,15 @@ class Python_Visitor(AST_Visitor):
         raise NotImplementedError
 
     def function_file_visitor(self, node: Function_File, n_parent, relation):
-        header = ('import mat2py.core as mp\n'
-                  'from mat2py.core import (end, I, colon, M)\n')
+        header = ('import mat2py as mp\n'
+                  'from mat2py.core import *\n')
 
         func = '\n'.join([self.pop(l) for l in node.l_functions])
         self[node] = '\n'.join([header, func])
 
     def script_file_visitor(self, node: Script_File, n_parent, relation):
-        header = ('import mat2py.core as mp\n'
-                  'from mat2py.core import (end, I, colon, M)\n')
+        header = ('import mat2py as mp\n'
+                  'from mat2py.core import *\n')
         body = (f'def main():\n'
                 f'{self.indent(self.pop(node.n_statements))}\n\n\n'
                 f'if __name__ == "__main__":\n'
@@ -225,6 +225,28 @@ class Python_Visitor(AST_Visitor):
             String_Literal, Char_Array_Literal,
             Reference, Cell_Reference,
         )) else ('(', ')')
+
+    @staticmethod
+    def __is_matrix(node: Node):
+        if isinstance(node, (Matrix_Expression, Range_Expression)):
+            return True
+        elif isinstance(node, (Unary_Operation,)) and node.t_op.value in ("'", ".'"):
+            return True
+        else:
+            return False
+
+    @classmethod
+    def __is_scalar(cls, node: Node):
+        if isinstance(node, (Number_Literal,)):
+            return True
+        # elif isinstance(node, Identifier) and node.t_ident in ('pi', 'eps', ):
+        #     return True
+        elif isinstance(node, (Binary_Operation, Binary_Logical_Operation)):
+            return cls.__is_scalar(node.n_lhs) and cls.__is_scalar(node.n_rhs)
+        elif isinstance(node, (Unary_Operation, )):
+            return cls.__is_scalar(node.n_expr)
+        else:
+            return False
 
     def switch_statement_visitor(self, node: Switch_Statement, n_parent, relation):
         l_actions = []
@@ -288,8 +310,10 @@ class Python_Visitor(AST_Visitor):
         bra, ket = self.__bracket(node.n_expr)
         n_expr = f'{bra}{self.pop(node.n_expr)}{ket}'
 
-        if t_op in ("'", ".'"):
+        if t_op == ".'":
             self[node] = f'{n_expr}.T'
+        elif t_op == "'":
+            self[node] = f'{n_expr}.H'
         else:
             self[node] = f'{t_op}{n_expr}'
 
@@ -301,14 +325,27 @@ class Python_Visitor(AST_Visitor):
         n_lhs = self.pop(node.n_lhs)
         n_rhs = self.pop(node.n_rhs)
 
-        if t_op in ('\\', '/', '*', '.\\') and not isinstance(node.n_rhs, Number_Literal):
-            func_name = {'\\': 'mldivide', '/': 'mrdivide', '*': 'mtimes', '.\\': 'ldivide'}[t_op]
+        if t_op == '*' and (self.__is_scalar(node.n_rhs) or self.__is_scalar(node.n_lhs)):
+            t_op = '.*'
+
+        if t_op == '*':
+            t_op = '@'
+            if not (self.__is_matrix(node.n_lhs) or self.__is_matrix(node.n_rhs)):
+                if len(n_lhs) > len(n_rhs):
+                    n_rhs = f'M[{n_rhs}]'
+                else:
+                    n_lhs = f'M[{n_lhs}]'
+
+
+
+        if t_op in ('\\', '/', '.\\', '^') and not self.__is_scalar(node.n_rhs):
+            func_name = {'\\': 'mldivide', '/': 'mrdivide', '.\\': 'ldivide', '^': 'mpower'}[t_op]
             self[node] = f'{func_name}({n_lhs}, {n_rhs})'
             return
 
         t_op = {
             '~=': '!=', '&&': 'and', '||': 'or',
-            './': '/', '\\': '/', '.*': '*', '.^': '^'
+            './': '/', '.*': '*', '.^': '**', '^': '**',
         }.get(t_op, t_op)
 
         (bra0, ket0), (bra1, ket1) = map(self.__bracket, (node.n_lhs, node.n_rhs))
