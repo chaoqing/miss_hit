@@ -41,6 +41,7 @@ from miss_hit_core.m_parser import MATLAB_Parser
 
 class Python_Visitor(AST_Visitor):
     """ Matlab To Python/Numpy output: Python """
+
     def __init__(self, fd, mh=None, matlab_alias='mp'):
         super().__init__()
         self.fd = fd
@@ -98,7 +99,7 @@ class Python_Visitor(AST_Visitor):
 
     def general_for_statement_visitor(self, node: General_For_Statement, n_parent, relation):
         self[node] = f'for {self.pop(node.n_ident)} in {self.pop(node.n_expr)}:\n' \
-            f'{self.indent(self.pop(node.n_body))}\n'
+                     f'{self.indent(self.pop(node.n_body))}\n'
 
     def reshape_visitor(self, node: Reshape, n_parent, relation):
         self[node] = ':'
@@ -183,8 +184,18 @@ class Python_Visitor(AST_Visitor):
         header = ('import mat2py as mp\n'
                   'from mat2py.core import *\n')
 
-        func = '\n'.join([self.pop(l) for l in node.l_functions])
-        self[node] = '\n'.join([header, func])
+        n_sig = node.l_functions[0].n_sig
+        is_main = len(n_sig.l_inputs) + len(n_sig.l_outputs) == 0
+
+        l_functions = [self.pop(l) for l in node.l_functions]
+        if is_main:
+            l_functions = [*l_functions[1:], l_functions[0]]
+
+        footer = (f'if __name__ == "__main__":\n'
+                  f'{self.indent(f"{n_sig.n_name.t_ident.value}()")}') if is_main else ''
+
+        func = '\n'.join(l_functions)
+        self[node] = '\n'.join([header, func, footer])
 
     def script_file_visitor(self, node: Script_File, n_parent, relation):
         header = ('import mat2py as mp\n'
@@ -204,11 +215,13 @@ class Python_Visitor(AST_Visitor):
         n_name = self.pop(node.n_sig.n_name)
         n_body = self.indent(self.pop(node.n_body))
         l_inputs = ', '.join([self.pop(i) for i in node.n_sig.l_inputs])
-        l_outputs = self.indent('return {}'.format(', '.join([self.pop(i) for i in node.n_sig.l_outputs])))
+        l_outputs = ', '.join([self.pop(i) for i in node.n_sig.l_outputs])
+        if l_outputs != '':
+            l_outputs = self.indent('return {}'.format(l_outputs))
         self[node] = f'def {n_name}({l_inputs}):\n{n_body}\n{l_outputs}\n'
 
     def compound_assignment_statement_visitor(self, node: Compound_Assignment_Statement, n_parent, relation):
-        l_lhs = ', '.join([i if i!='~' else '_' for i in map(self.pop, node.l_lhs)])
+        l_lhs = ', '.join([i if i != '~' else '_' for i in map(self.pop, node.l_lhs)])
         self[node] = f'{l_lhs} = {self.pop(node.n_rhs)}'
 
     def simple_assignment_statement_visitor(self, node: Simple_Assignment_Statement, n_parent, relation):
@@ -243,7 +256,7 @@ class Python_Visitor(AST_Visitor):
         #     return True
         elif isinstance(node, (Binary_Operation, Binary_Logical_Operation)):
             return cls.__is_scalar(node.n_lhs) and cls.__is_scalar(node.n_rhs)
-        elif isinstance(node, (Unary_Operation, )):
+        elif isinstance(node, (Unary_Operation,)):
             return cls.__is_scalar(node.n_expr)
         else:
             return False
@@ -271,9 +284,9 @@ class Python_Visitor(AST_Visitor):
         l_actions = []
         for i, a in enumerate(node.l_actions):
             key = "else" if a.n_expr is None else "elif" if i > 0 else "if"
-            n_expr = '' if a.n_expr is None else ' '+self.pop(a.n_expr)
+            n_expr = '' if a.n_expr is None else ' ' + self.pop(a.n_expr)
             n_body = self.pop(a.n_body)
-            n_body = self.indent('pass' if len(n_body)==0 else n_body)
+            n_body = self.indent('pass' if len(n_body) == 0 else n_body)
             l_actions.append(f'{key}{n_expr}:\n{n_body}')
 
         self[node] = '\n'.join(l_actions)
@@ -335,8 +348,6 @@ class Python_Visitor(AST_Visitor):
                     n_rhs = f'M[{n_rhs}]'
                 else:
                     n_lhs = f'M[{n_lhs}]'
-
-
 
         if t_op in ('\\', '/', '.\\', '^') and not self.__is_scalar(node.n_rhs):
             func_name = {'\\': 'mldivide', '/': 'mrdivide', '.\\': 'ldivide', '^': 'mpower'}[t_op]
@@ -443,9 +454,9 @@ def main_handler():
     mh = Message_Handler("debug")
 
     mh.show_context = not options.brief
-    mh.show_style   = False
-    mh.show_checks  = True
-    mh.autofix      = False
+    mh.show_style = False
+    mh.show_checks = True
+    mh.autofix = False
 
     python_backend = MH_Python(options)
     command_line.execute(mh, options, {}, python_backend)
