@@ -1,2 +1,0 @@
-debugprint 🥔
-debugprint '🥔'

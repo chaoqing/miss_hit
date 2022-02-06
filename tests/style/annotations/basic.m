@@ -1,6 +1,0 @@
-% (c) Copyright 2020 Florian Schanda
-
-if foo
-%|pragma Justify( metric,"npath","reason" )     ;
-%|
-end

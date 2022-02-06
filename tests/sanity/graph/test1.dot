@@ -1,8 +1,0 @@
-digraph G {
-  1 [label="start"];
-  2 [label="vertex 2"];
-  3 [label="end"];
-
-  1 -> 2;
-  2 -> 3;
-}

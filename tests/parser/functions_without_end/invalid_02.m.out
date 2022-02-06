@@ -1,4 +1,0 @@
-In invalid_02.m, line 20
-|         function c
-|         ^^^^^^^^ error: this function must be terminated with end
-MISS_HIT Debug Summary: 1 file(s) analysed, 1 error(s)

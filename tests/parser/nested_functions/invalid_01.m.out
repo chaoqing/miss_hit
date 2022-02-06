@@ -1,4 +1,0 @@
-In invalid_01.m, line 6
-|     function potato
-|     ^^^^^^^^ error: nested function cannot appear inside if
-MISS_HIT Debug Summary: 1 file(s) analysed, 1 error(s)

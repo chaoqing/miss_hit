@@ -1,9 +1,0 @@
-# Extra ignores for LaTeX
-
-*.aux
-*.log
-*.nav
-*.out
-*.snm
-*.toc
-*.vrb

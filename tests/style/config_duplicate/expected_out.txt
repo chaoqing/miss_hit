@@ -1,6 +1,0 @@
-=== PLAIN MODE ===
-.: error: multiple config files found; cannot find project root: please add a config file with the 'project_root' directive
-MISS_HIT Style Summary: 1 file(s) analysed, 1 error(s)
-
-=== HTML MODE ===
-MISS_HIT Style Summary: 1 file(s) analysed, 1 error(s)

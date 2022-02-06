@@ -1,7 +1,0 @@
-% (c) Copyright 2019 Zenuity AB
-
-somevar, othervar;   % ok
-somevar,  othervar;  % ok
-somevar , othervar;  % not ok
-somevar ,othervar;   % not ok
-somevar,othervar;    % not ok

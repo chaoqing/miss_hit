@@ -1,5 +1,0 @@
-=== PLAIN MODE ===
-In year_wrong.m, line 1
-| % (c) Copyright 2025 Florian Schanda
-|                 ^^^^ error: end year is later than 2021
-MISS_HIT Copyright Summary: 11 file(s) analysed, 1 error(s)

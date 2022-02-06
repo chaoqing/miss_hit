@@ -1,5 +1,0 @@
-=== PLAIN MODE ===
-MISS_HIT Style Summary: 0 file(s) analysed, everything seems fine; 1 file(s) excluded from analysis
-
-=== HTML MODE ===
-MISS_HIT Style Summary: 0 file(s) analysed, everything seems fine; 1 file(s) excluded from analysis
