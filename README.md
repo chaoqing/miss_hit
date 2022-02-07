@@ -4,7 +4,7 @@ This package provides a utility `mh_python` to translate MATLAB into Python form
 The generated Python code hope to be directly runnable with the [mat2py](https://mat2py.org) framework.
 
 This `mh_python` utility was initially developed under fork of [MISS_HIT](https://github.com/florianschanda/miss_hit) and
-then exported to a seperated [branch](https://github.com/mat2py/miss_hit/tree/mh_python) for uploading to [PyPi](https://pypi.org/project/mh_python/).
+then exported to a seperated [branch](https://github.com/mat2py/miss_hit/tree/mh_python) for uploading to [PyPi](https://pypi.org/project/mh-python/).
 
 We hope to merge this utility back to `miss_hit` after it is stable.
 
@@ -12,7 +12,7 @@ We hope to merge this utility back to `miss_hit` after it is stable.
 
 ```python
 # must install 
-python3 -m pip install mh_python
+python3 -m pip install mh-python
 
 # recommend install for prettify generated code
 python3 -m pip install black isort --upgrade
