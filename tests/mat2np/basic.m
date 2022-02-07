@@ -1,3 +1,8 @@
+s = struct('f',{'a','b'});
+% s.('f') = 5;
+disp({s.f, s.('f')});
+A = 5i;
+A = s;
 A=A+3+4i;
 disp(' a b " ');
 disp('x');
