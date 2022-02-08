@@ -1,6 +1,7 @@
 s = struct('f',{'a','b'});
 % s.('f') = 5;
 disp({s.f, s.('f')});
+~A & ~(A+s);
 A = 5i;
 A = s;
 A=A+3+4i;
