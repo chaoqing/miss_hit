@@ -10,6 +10,8 @@ We hope to merge this utility back to `miss_hit` after it is stable.
 
 ## Usage
 
+Try it online [here](https://translate.mat2py.org/).
+
 ```python
 # must install 
 python3 -m pip install mh-python
