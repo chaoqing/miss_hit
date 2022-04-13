@@ -10,6 +10,10 @@ disp(' a b " ');
 disp('x');
 disp(A(:, 4, 2:end));
 
+while (no <= 100)
+     no = no+1;
+end
+
 clear A;
 
 [out(4), ~] = func_example(~A(1, end), A(end-1)', A(3:(end-1)).');
