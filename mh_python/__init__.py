@@ -28,6 +28,7 @@ import sys
 from collections import OrderedDict
 from io import StringIO
 from pathlib import Path
+import keyword
 
 from miss_hit_core import command_line, pathutil, work_package, cfg_tree
 from miss_hit_core.errors import Error, Message_Handler
@@ -123,6 +124,14 @@ class Python_Visitor(AST_Visitor):
     def selection_visitor(self, node: Selection, n_parent, relation):
         self[node] = f"{self.pop(node.n_prefix)}.{self.pop(node.n_field)}"
 
+    def while_statement_visitor(
+        self, node: While_Statement, n_parent, relation
+    ):
+        self[node] = (
+            f"while {self.pop(node.n_guard)}:\n"
+            f"{self.indent(self.pop(node.n_body))}\n"
+        )
+
     def general_for_statement_visitor(
         self, node: General_For_Statement, n_parent, relation
     ):
@@ -214,8 +223,8 @@ class Python_Visitor(AST_Visitor):
 
         # Python and Matlab keywords set are different. Luckily, Matlab forbids identifier start with `_`.
         prefix = '_' if value in (
-            'not', 'is', 'and', 'or', 'in', 'del',  # python keyword can not be overwritten
-            'all', 'any',  # python build-in names do not suggest overwriting
+            *keyword.kwlist,  # python keyword can not be overwritten
+            'all', 'any', "slice", "eval",  # python build-in names do not suggest overwriting
             'I', 'M', 'C',  # mat2py keywords
         ) else ''
         self[node] = f'{prefix}{value}'
