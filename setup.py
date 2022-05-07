@@ -8,7 +8,7 @@ with open("README.md", "r") as fd:
 
 setuptools.setup(
     name="mh_python",
-    version="0.0.9",
+    version="0.0.10",
     author="Chaoqing Wang",
     author_email="chaoqingwang.nick@gmail.com",
     description="Matlab to Python/Numpy translator",
